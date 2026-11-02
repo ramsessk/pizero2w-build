@@ -2,7 +2,9 @@
 
 Docker와 Buildroot로 Raspberry Pi용 Linux 이미지를 만들고, Wi-Fi·SSH·I2C 및 SSD1306 OLED 시계를 구성하는 프로젝트입니다. Ubuntu x86_64 호스트에서의 빌드를 기준으로 합니다.
 
-> **대상 보드 확인:** 저장소 이름은 `pizero2w-build`이지만, 현재 저장된 defconfig는 **Pi Zero W(ARM1176JZF-S / ARMv6, bcm2708-rpi-zero-w)**용입니다. Pi Zero 2 W용 설정으로 검증된 상태는 아닙니다. Zero 2 W에서 사용하려면 해당 보드의 CPU·커널·DTB·펌웨어 설정을 먼저 확인해야 합니다.
+> **개발 이력과 대상 보드:** 이 프로젝트는 처음에 **Pi Zero 2 W**를 목표로 시작하여 저장소 이름을 `pizero2w-build`로 정했습니다. 이후 실제 구현에서는 이미지를 **Pi Zero W에 다운로드하여 테스트**했습니다. 현재 구현 및 실기기 테스트의 기준 보드는 Pi Zero W입니다.
+>
+> 저장소 이름은 `pizero2w-build`이지만, 현재 저장된 defconfig는 **Pi Zero W(ARM1176JZF-S / ARMv6, bcm2708-rpi-zero-w)**용입니다. Pi Zero 2 W용 설정으로 검증된 상태는 아닙니다. Zero 2 W에서 사용하려면 해당 보드의 CPU·커널·DTB·펌웨어 설정을 먼저 확인해야 합니다.
 
 ## 목차
 
@@ -339,7 +341,7 @@ git status --short
 
 문서 통합 과정에서 확인한 아래 항목은 코드·설정 변경을 수행한 것이 아니라, 현재 저장소와 이전 문서 사이의 차이를 기록한 것입니다.
 
-1. **보드 대상:** 프로젝트 이름과 달리 defconfig·DTB·펌웨어 설정은 Pi Zero W용입니다.
+1. **보드 대상:** Pi Zero 2 W를 목표로 시작했으나 실제 이미지 다운로드와 테스트는 Pi Zero W에서 진행했습니다. 현재 defconfig·DTB·펌웨어 설정은 Pi Zero W용이며, Zero 2 W 지원은 별도 확인이 필요합니다.
 2. **시각 동기화:** S45ntpdate의 잘못된 서버 주소와 실제 ntpd 구현에 맞는 옵션 수정이 필요합니다.
 3. **I2C 부트 설정:** 루트 오버레이의 config.txt와 실제 FAT 부트 파티션 설정을 구분해야 합니다.
 4. **재현 가능한 커널 설정:** menuconfig 및 linux-menuconfig에서 로컬로 바꾼 값이 저장된 defconfig에 모두 반영되었는지 확인해야 합니다. 별도 커스텀 커널 설정 파일은 현재 메인 저장소에 없습니다.
@@ -349,4 +351,4 @@ git status --short
 
 통합 전 문서는 [README 원본](docs/backup/README.md)과 [README2 원본](docs/backup/README2.md)에 내용 변경 없이 보관했습니다. 현재 사용 절차는 이 README를 기준으로 합니다.
 
-문서와 저장된 설정·스크립트를 대조하여 정리했으며, 이 문서 변경 과정에서 실제 이미지 빌드 및 보드 부팅 검증은 수행하지 않았습니다.
+실제 이미지 다운로드와 테스트는 프로젝트 개발자가 Pi Zero W에서 수행했습니다. 이 README는 해당 개발 이력과 저장된 설정·스크립트를 기준으로 정리했으며, 문서 편집 과정에서 별도의 이미지 빌드 및 보드 부팅 재검증은 수행하지 않았습니다.
