@@ -108,12 +108,21 @@ docker build \
   -t buildroot-builder .
 ```
 
-프로젝트 전체를 마운트하고 Buildroot 디렉터리에서 시작합니다. 루트의 `configs/`도 컨테이너에서 접근할 수 있도록 기존 문서의 workspace 단독 마운트를 변경했습니다.
+호스트의 프로젝트 루트에서 다음 명령으로 실행합니다. 프로젝트 전체와 workspace를 함께 마운트하여 루트의 `configs/`에 접근하면서 기존 빌드 경로도 유지합니다.
+
+| 컨테이너 경로 | 용도 |
+| --- | --- |
+| `/home/builduser/project` | 프로젝트 전체, 설정 파일 접근 |
+| `/home/builduser/workspace` | 기존 빌드 경로 유지 |
+| `/home/builduser/workspace/buildroot` | 빌드 명령을 실행하는 작업 디렉터리 |
+
+두 경로는 호스트의 같은 workspace 파일을 공유하므로 복사본이 생성되지 않습니다.
 
 ```bash
 docker run -it --rm \
   -v "$PWD:/home/builduser/project" \
-  -w /home/builduser/project/workspace/buildroot \
+  -v "$PWD/workspace:/home/builduser/workspace" \
+  -w /home/builduser/workspace/buildroot \
   buildroot-builder bash
 ```
 
@@ -123,7 +132,7 @@ docker run -it --rm \
 
 ### 저장된 설정 불러오기
 
-컨테이너의 `/home/builduser/project/workspace/buildroot`에서 실행합니다.
+컨테이너의 `/home/builduser/workspace/buildroot`에서 실행합니다.
 
 ```bash
 make defconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_custom_defconfig
@@ -311,7 +320,7 @@ make defconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_cus
 make
 ```
 
-같은 작업 폴더를 다시 마운트하면 기존 output/.config와 빌드 결과가 남습니다. 매번 defconfig를 복원할 필요는 없습니다. 오버레이만 수정했다면 보통 `make`로 이미지를 재생성합니다. 삭제한 오버레이 파일은 기존 output/target에 남을 수 있어, 삭제 반영이 중요하면 깨끗한 출력 디렉터리에서 재빌드하십시오.
+위의 이중 마운트 방식으로 같은 작업 폴더를 다시 마운트하면 기존 output/.config와 빌드 결과가 남습니다. 기존 빌드를 재개할 때는 `/home/builduser/workspace/buildroot`에서 `make`만 실행하면 되며, 매번 defconfig를 복원할 필요는 없습니다. `make defconfig`는 현재 설정을 저장된 설정으로 다시 불러오므로, 기존 설정을 유지하려는 경우 실행하지 않습니다. 오버레이만 수정했다면 보통 `make`로 이미지를 재생성합니다. 삭제한 오버레이 파일은 기존 output/target에 남을 수 있어, 삭제 반영이 중요하면 깨끗한 출력 디렉터리에서 재빌드하십시오.
 
 호스트에서 변경을 확인하고 필요한 파일만 커밋합니다.
 
@@ -323,6 +332,36 @@ git status --short
 서브모듈 내부 수정은 메인 저장소 커밋만으로 보존되지 않습니다. 별도 패치 또는 접근 가능한 fork에 커밋·푸시한 뒤 메인 저장소에서 서브모듈 커밋을 갱신해야 합니다.
 
 ## 문제 해결
+
+### fakeroot가 libfakeroot.so를 찾지 못하는 경우
+
+```text
+fakeroot: preload library `libfakeroot.so' not found, aborting.
+```
+
+기존 output을 유지한 채 컨테이너 내부 빌드 경로를 바꾸면 발생할 수 있습니다. 실제 확인 사례에서는 라이브러리가 `output/host/lib/libfakeroot.so`에 존재했지만, fakeroot 스크립트의 FAKEROOT_PREFIX·FAKEROOT_BINDIR·PATHS는 이전 `/home/builduser/workspace/buildroot/output/host` 경로를 참조하고 있었습니다.
+
+컨테이너의 Buildroot 디렉터리에서 확인합니다.
+
+```bash
+grep -nE '/home/builduser|libfakeroot|FAKEROOT' output/host/bin/fakeroot
+find output/host -name 'libfakeroot*'
+```
+
+복구 절차:
+
+1. 현재 컨테이너에서 `exit`합니다.
+2. 호스트 프로젝트 루트에서 [Docker 빌드 환경](#docker-빌드-환경)의 이중 마운트 명령으로 다시 실행합니다.
+3. 컨테이너에서 다음 명령으로 fakeroot를 확인하고 빌드를 재개합니다.
+
+```bash
+output/host/bin/fakeroot /bin/true
+make
+```
+
+이 방식으로 기존 경로를 복원한 뒤 사용자가 정상 동작을 확인했습니다. 설정 복원이나 output 삭제 없이 기존 빌드를 이어갈 수 있습니다. 호스트에 fakeroot 패키지를 추가 설치하는 대신 Buildroot의 `output/host` 도구가 참조하는 경로를 맞추는 것이 이 사례의 해결 방법입니다. 이후에도 빌드 경로를 유지하십시오.
+
+### 기타 문제
 
 | 증상 | 확인할 내용 |
 | --- | --- |
