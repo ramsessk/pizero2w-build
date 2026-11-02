@@ -1,0 +1,2 @@
+# [유저명] [유저ID] [그룹명] [그룹ID] [비밀번호] [홈디렉터리] [기본셸] [소속그룹들] [설명]
+sg -1 sg -1 raspberry /home/sg /bin/bash sudo,audio,video RaspberryPi_User

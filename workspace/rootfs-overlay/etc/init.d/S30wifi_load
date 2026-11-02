@@ -1,0 +1,43 @@
+#!/bin/sh
+# File Path: rootfs-overlay/etc/init.d/S30wifi_load
+
+case "$1" in
+  start)
+    # 1. Fire up the core Broadcom wireless driver
+    echo "Loading brcmfmac wireless driver..."
+    modprobe brcmfmac
+    
+    # 2. Dynamically parse and load custom drivers listed in /etc/modules
+    MODULES_FILE="/etc/modules"
+    if [ -f "$MODULES_FILE" ]; then
+        echo "Processing custom modules from /etc/modules..."
+        while read -r module || [ -n "$module" ]; do
+            # Secure handling for empty lines and comments
+            case "$module" in
+                # Checks for empty lines or lines starting with a space/tab
+                "") continue ;;
+                # Checks for comment hashes
+                #*) continue ;;
+                # Valid modules get loaded here
+                *)
+                    echo "  -> modprobe $module"
+                    modprobe "$module" 2>/dev/null
+                    ;;
+            esac
+        done < "$MODULES_FILE"
+    fi
+    
+    # 3. Give the kernel a brief window to create device descriptors inside /dev
+    sleep 2
+
+    # ⚠️ [이중 안전장치] mdev가 미처 처리하지 못한 경우를 대비해 수동 권한 강제 부여
+    if [ -e /dev/i2c-1 ]; then
+        chmod 666 /dev/i2c-1
+        echo "[INIT] Successfully opened access permission for /dev/i2c-1 (0666)"
+    fi
+
+    ;;
+esac
+
+exit 0
+

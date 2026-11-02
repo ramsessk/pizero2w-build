@@ -1,0 +1,13 @@
+#!/bin/sh
+# S45ntpdate: 인터넷 시간 동기화 스크립트
+
+case "$1" in
+  start)
+    echo -n "Syncing system clock with NTP server: "
+    # ://google.com 서버로부터 시간을 수신하여 시스템 시각 강제 설정 (-q)
+    ntpd -q -n -p ://google.com
+    echo "OK"
+    ;;
+esac
+exit 0
+

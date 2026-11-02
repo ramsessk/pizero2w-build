@@ -1,0 +1,15 @@
+# /etc/fstab: static file system information.
+#
+# <file system> <mount point>   <type>  <options>       <dump>  <pass>
+
+# Buildroot 기본 가상 파일시스템 설정 (반드시 유지)
+/dev/root       /               ext4    noatime,rw      0       1
+proc            /proc           proc    defaults        0       0
+sysfs           /sys            sysfs   defaults        0       0
+devpts          /dev/pts        devpts  defaults,gid=5,mode=620 0       0
+tmpfs           /dev/shm        tmpfs   mode=0777       0       0
+tmpfs           /tmp            tmpfs   mode=1777       0       0
+tmpfs           /run            tmpfs   mode=0755       0       0
+
+# 라즈베리 파이 제로 2 W vfat 부트 파티션 자동 마운트 추가
+/dev/mmcblk0p1  /boot/firmware  vfat    defaults,rw,umask=000  0       2

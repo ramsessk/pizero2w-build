@@ -1,0 +1,6 @@
+[submodule "workspace/buildroot"]
+	path = workspace/buildroot
+	url = https://github.com/buildroot/buildroot.git
+[submodule "workspace/firmware"]
+	path = workspace/firmware
+	url = https://github.com/pyavitz/firmware.git

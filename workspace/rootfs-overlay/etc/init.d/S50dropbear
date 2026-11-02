@@ -1,0 +1,28 @@
+#!/bin/sh
+# 파일 경로: rootfs-overlay/etc/init.d/S50dropbear
+
+case "$1" in
+  start)
+    echo -n "Starting Dropbear SSH server: "
+    # -R 옵션을 유지하되, 이미 고정 키 파일이 존재하므로 매번 새로 만들지 않고 기존 파일을 읽어옵니다.
+    dropbear -R -B
+    echo "OK"
+    ;;
+  stop)
+    echo -n "Stopping Dropbear SSH server: "
+    killall dropbear
+    echo "OK"
+    ;;
+  restart|reload)
+    $0 stop
+    sleep 1
+    $0 start
+    ;;
+  *)
+    echo "Usage: $0 {start|stop|restart}"
+    exit 1
+    ;;
+esac
+
+exit 0
+

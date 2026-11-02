@@ -1,0 +1,2 @@
+# Enable I2C pins
+dtparam=i2c_arm=on

@@ -1,0 +1,9 @@
+# Buildroot를 루트에서 별도 출력 경로로 빌드하는 경우
+/output/
+
+# 로컬 환경 및 비밀정보
+.env
+.env.*
+!.env.example
+.DS_Store
+workspace/rootfs-overlay/etc/wpa_supplicant/wpa_supplicant.conf
