@@ -165,6 +165,31 @@ ARM64의 최초 prepare는 GCC·binutils·glibc 등을 컴파일하므로 시간
 
 ARM64 설정을 추가하는 과정에서 스크립트 분기·설정 파일은 검토하지만, 실제 ARM64 툴체인 전체 컴파일 및 Pi Zero W 부팅은 사용자 장비에서 확인해야 합니다.
 
+### ARM64 configuration recovery
+
+초기 ARM64 defconfig에는 커스텀 커널 헤더 계열 지정이 누락되어 있었습니다. Buildroot는 이를 오래된 헤더로 간주해 glibc 선택을 해제하고 uClibc로 대체했고, 스크립트는 설정 생성 직후 중단했습니다. 현재는 고정 커널 6.12.61에 맞춰 다음을 명시합니다.
+
+```text
+BR2_KERNEL_HEADERS_AS_KERNEL=y
+BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_12=y
+```
+
+처음 prepare에서 설정 생성까지만 진행한 뒤 호환성 오류가 발생했다면, 호스트에서 `git pull` 후 컨테이너에서 다음과 같이 복구합니다. 기존 설정은 백업하고 수정된 defconfig를 다시 불러옵니다. 이 명령은 현재 .config를 저장소 설정으로 교체하므로 로컬 변경은 백업과 비교하여 반영하십시오.
+
+```bash
+cp /home/builduser/project/workspace/output-aarch64/.config \
+   /home/builduser/project/workspace/output-aarch64/.config.before-header-fix
+
+make -C /home/builduser/workspace/buildroot \
+  O=/home/builduser/project/workspace/output-aarch64 \
+  BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_aarch64_host_defconfig defconfig
+
+/home/builduser/project/scripts/build.sh prepare
+/home/builduser/project/scripts/build.sh build
+```
+
+이 초기 오류는 툴체인 컴파일 전에 발생하므로 해당 사례에서는 clean이나 출력 폴더 삭제가 필요하지 않습니다. 다른 libc로 이미 컴파일한 출력은 별도로 보관하고 새 출력 폴더에서 빌드하십시오.
+
 ### 설정 수동 편집
 
 컨테이너에서 해당 출력 폴더를 지정합니다.

@@ -37,20 +37,24 @@ if [[ -f "$out/.pizero-build-host" ]] &&
     echo "Output belongs to another host architecture: $out" >&2
     exit 1
 fi
+check_config() {
+    if ! grep -qx "$expected=y" "$out/.config" ||
+       ! grep -qx 'BR2_arm1176jzf_s=y' "$out/.config"; then
+        echo "Configuration validation failed: $out/.config" >&2
+        echo "Required: $expected=y and BR2_arm1176jzf_s=y" >&2
+        grep -E '^BR2_(arm1176|TOOLCHAIN_BUILDROOT|TOOLCHAIN_EXTERNAL|PACKAGE_HOST_LINUX_HEADERS_CUSTOM)' "$out/.config" >&2 || true
+        echo "See README: ARM64 configuration recovery. No output was deleted." >&2
+        return 1
+    fi
+}
 if [[ -f "$out/.config" ]]; then
-    grep -qx "$expected=y" "$out/.config" &&
-    grep -qx 'BR2_arm1176jzf_s=y' "$out/.config" || {
-        echo "Existing configuration is incompatible: $out/.config" >&2
-        echo "Back up and move this output directory before retrying; nothing was deleted." >&2
-        exit 1
-    }
+    check_config
 else
     mkdir -p "$out"
     make -C "$br" O="$out" BR2_DEFCONFIG="$config" defconfig
 fi
 # Always check the resolved configuration, including after first initialization.
-grep -qx "$expected=y" "$out/.config"
-grep -qx 'BR2_arm1176jzf_s=y' "$out/.config"
+check_config
 uname -m > "$out/.pizero-build-host"
 echo "Host: $(uname -m); output: $out"
 if [[ "$action" == prepare ]]; then
