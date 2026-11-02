@@ -1,6 +1,6 @@
 # pizero2w-build
 
-Docker와 Buildroot로 Raspberry Pi용 Linux 이미지를 만들고, Wi-Fi·SSH·I2C 및 SSD1306 OLED 시계를 구성하는 프로젝트입니다. Ubuntu x86_64 호스트에서의 빌드를 기준으로 합니다.
+Docker와 Buildroot로 Raspberry Pi용 Linux 이미지를 만들고, Wi-Fi·SSH·I2C 및 SSD1306 OLED 시계를 구성하는 프로젝트입니다. Ubuntu x86_64와 64비트 Raspberry Pi(aarch64) 호스트의 네이티브 Docker 빌드를 지원하도록 구성합니다. 최종 이미지의 대상은 두 경우 모두 Pi Zero W(ARMv6)입니다.
 
 > **개발 이력과 대상 보드:** 이 프로젝트는 처음에 **Pi Zero 2 W**를 목표로 시작하여 저장소 이름을 `pizero2w-build`로 정했습니다. 이후 실제 구현에서는 이미지를 **Pi Zero W에 다운로드하여 테스트**했습니다. 현재 구현 및 실기기 테스트의 기준 보드는 Pi Zero W입니다.
 >
@@ -130,18 +130,57 @@ docker run -it --rm \
 
 ## Buildroot 설정과 빌드
 
-### 저장된 설정 불러오기
+### 호스트별 툴체인 자동 준비
 
-컨테이너의 `/home/builduser/workspace/buildroot`에서 실행합니다.
+Docker는 기본적으로 호스트 CPU에 맞는 Ubuntu 이미지를 사용합니다. 에뮬레이션을 사용하지 않으며 Docker build/run에 `--platform linux/amd64`를 강제하지 않습니다.
+
+| 컨테이너의 uname -m | 설정 파일 | 툴체인 준비 방식 | 출력 폴더(호스트 프로젝트 기준) |
+| --- | --- | --- | --- |
+| x86_64 | `configs/raspberrypizero_custom_defconfig` | 기존 Bootlin ARMv6 glibc 툴체인 자동 다운로드 | `workspace/buildroot/output/` |
+| aarch64 | `configs/raspberrypizero_aarch64_host_defconfig` | ARM64에서 실행되는 ARMv6 glibc 툴체인을 소스에서 자동 생성 | `workspace/output-aarch64/` |
+
+Bootlin 공식 배포 툴체인은 [FAQ](https://toolchains.bootlin.com/faq.html)에 따르면 x86_64 실행용입니다. 따라서 ARM64에서는 같은 바이너리를 다운로드하지 않고 Buildroot 내부 툴체인 생성 기능을 사용합니다. 일반 배포판의 ARMv7용 크로스 컴파일러를 설치하는 방식도 사용하지 않습니다.
+
+위 Docker 실행 명령으로 컨테이너에 들어간 후 다음을 실행합니다.
 
 ```bash
-make defconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_custom_defconfig
-make menuconfig
+# 컴파일러·glibc·sysroot만 먼저 준비
+/home/builduser/project/scripts/build.sh prepare
+
+# 준비된 툴체인을 재사용하여 전체 이미지 빌드
+/home/builduser/project/scripts/build.sh build
 ```
 
-기존 `output/.config`에 보존해야 할 변경이 있다면 defconfig를 불러오기 전에 [설정 백업](#설정-백업과-반복-빌드)을 하십시오. 별도의 Buildroot clone이나 임의 브랜치 checkout은 필요하지 않습니다.
+처음부터 전체 빌드만 실행해도 필요한 툴체인을 자동 준비합니다.
 
-### 현재 defconfig의 핵심 설정
+```bash
+/home/builduser/project/scripts/build.sh
+```
+
+ARM64의 최초 prepare는 GCC·binutils·glibc 등을 컴파일하므로 시간이 걸립니다. 이후 같은 출력 폴더를 유지하면 재사용합니다. 툴체인을 Docker 이미지에 미리 내장한 것은 아니며, 마운트된 호스트 폴더에 보존합니다. ARM64 출력 폴더에서 `make clean`을 하면 툴체인도 제거되어 다시 생성해야 합니다.
+
+스크립트는 기존 .config를 덮어쓰지 않습니다. CPU 또는 툴체인 설정이 맞지 않으면 중단하므로 필요한 변경을 백업하고 해당 출력 폴더를 다른 이름으로 옮긴 후 다시 실행하십시오. Ubuntu에서 옮긴 output을 ARM64 빌드 폴더에 복사하지 마십시오. 기존 Ubuntu output은 ARM64 실행 시 사용하거나 삭제하지 않습니다.
+
+파이의 이전 실패 설정이 `workspace/buildroot/.config`에 있어도 새 스크립트는 별도 `workspace/output-aarch64/.config`를 사용합니다. 새 빌드에는 저장소 설정이 사용되므로, 이전 로컬 menuconfig 변경이 필요하면 별도로 검토하여 반영하십시오.
+
+ARM64 설정을 추가하는 과정에서 스크립트 분기·설정 파일은 검토하지만, 실제 ARM64 툴체인 전체 컴파일 및 Pi Zero W 부팅은 사용자 장비에서 확인해야 합니다.
+
+### 설정 수동 편집
+
+컨테이너에서 해당 출력 폴더를 지정합니다.
+
+```bash
+# Ubuntu x86_64
+make -C /home/builduser/workspace/buildroot menuconfig
+
+# ARM64 파이: build.sh prepare로 최초 설정을 만든 후
+make -C /home/builduser/workspace/buildroot \
+  O=/home/builduser/project/workspace/output-aarch64 menuconfig
+```
+
+저장된 defconfig를 수동으로 다시 불러오면 현재 설정이 바뀌므로 먼저 백업하십시오.
+
+### 기존 x86_64 호스트용 defconfig의 핵심 설정
 
 | 구분 | 저장된 값 |
 | --- | --- |
@@ -173,11 +212,15 @@ Bash 패키지가 선택되어 있어도 시스템 기본 셸까지 Bash로 설�
 make
 ```
 
-완료 후 이미지 경로:
+위 수동 `make`는 x86_64의 기존 기본 output에서 빌드할 때 사용합니다. ARM64에서는 `scripts/build.sh build`를 사용하십시오.
+
+완료 후 이미지 경로(x86_64):
 
 ```text
 workspace/buildroot/output/images/sdcard.img
 ```
+
+ARM64에서 스크립트로 빌드한 이미지는 `workspace/output-aarch64/images/sdcard.img`에 생성됩니다. 아래 SD 카드 기록 명령의 `if=`도 해당 경로로 바꾸십시오.
 
 120M 루트 파일시스템 공간이 부족하면 `menuconfig`의 ext 파일시스템 크기를 늘립니다. CPU·툴체인 같은 기반 설정을 변경하면 기존 output을 재사용하기보다 새 출력 디렉터리에서 전체 빌드하는 것이 적합합니다. 이 문서의 명령은 기본 output 경로를 기준으로 합니다.
 
@@ -307,7 +350,15 @@ SMBus 전송 크기 제한에 맞춰 컨트롤 바이트 `int(buf[0])`와 데이
 
 ## 설정 백업과 반복 빌드
 
-컨테이너의 Buildroot 디렉터리에서 설정을 저장합니다.
+x86_64는 컨테이너의 Buildroot 디렉터리에서 설정을 저장합니다. ARM64 설정은 별도 명령으로 저장하여 기존 Bootlin 설정을 덮어쓰지 않습니다.
+
+```bash
+make -C /home/builduser/workspace/buildroot \
+  O=/home/builduser/project/workspace/output-aarch64 savedefconfig \
+  BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_aarch64_host_defconfig
+```
+
+다음 기존 백업·복원 명령은 x86_64용입니다.
 
 ```bash
 make savedefconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_custom_defconfig

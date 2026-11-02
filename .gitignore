@@ -1,5 +1,6 @@
 # Buildroot를 루트에서 별도 출력 경로로 빌드하는 경우
 /output/
+/workspace/output-aarch64/
 
 # 로컬 환경 및 비밀정보
 .env
