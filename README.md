@@ -159,7 +159,7 @@ Bootlin 공식 배포 툴체인은 [FAQ](https://toolchains.bootlin.com/faq.html
 
 ARM64의 최초 prepare는 GCC·binutils·glibc 등을 컴파일하므로 시간이 걸립니다. 이후 같은 출력 폴더를 유지하면 재사용합니다. 툴체인을 Docker 이미지에 미리 내장한 것은 아니며, 마운트된 호스트 폴더에 보존합니다. ARM64 출력 폴더에서 `make clean`을 하면 툴체인도 제거되어 다시 생성해야 합니다.
 
-스크립트는 기존 .config를 덮어쓰지 않습니다. CPU 또는 툴체인 설정이 맞지 않으면 중단하므로 필요한 변경을 백업하고 해당 출력 폴더를 다른 이름으로 옮긴 후 다시 실행하십시오. Ubuntu에서 옮긴 output을 ARM64 빌드 폴더에 복사하지 마십시오. 기존 Ubuntu output은 ARM64 실행 시 사용하거나 삭제하지 않습니다.
+설정 파일 위치는 x86_64에서 `workspace/buildroot/.config`, ARM64에서 `workspace/output-aarch64/.config`입니다. x86_64의 기본 output 경로를 사용하는 경우 설정은 `output/.config`가 아니라 Buildroot 루트에 있습니다. 스크립트는 기존 .config를 덮어쓰지 않습니다. CPU 또는 툴체인 설정이 맞지 않으면 중단하므로 필요한 변경을 백업하고 해당 출력 폴더를 다른 이름으로 옮긴 후 다시 실행하십시오. Ubuntu에서 옮긴 output을 ARM64 빌드 폴더에 복사하지 마십시오. 기존 Ubuntu output은 ARM64 실행 시 사용하거나 삭제하지 않습니다.
 
 파이의 이전 실패 설정이 `workspace/buildroot/.config`에 있어도 새 스크립트는 별도 `workspace/output-aarch64/.config`를 사용합니다. 새 빌드에는 저장소 설정이 사용되므로, 이전 로컬 menuconfig 변경이 필요하면 별도로 검토하여 반영하십시오.
 
@@ -396,7 +396,7 @@ make defconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_cus
 make
 ```
 
-위의 이중 마운트 방식으로 같은 작업 폴더를 다시 마운트하면 기존 output/.config와 빌드 결과가 남습니다. 기존 빌드를 재개할 때는 `/home/builduser/workspace/buildroot`에서 `make`만 실행하면 되며, 매번 defconfig를 복원할 필요는 없습니다. `make defconfig`는 현재 설정을 저장된 설정으로 다시 불러오므로, 기존 설정을 유지하려는 경우 실행하지 않습니다. 오버레이만 수정했다면 보통 `make`로 이미지를 재생성합니다. 삭제한 오버레이 파일은 기존 output/target에 남을 수 있어, 삭제 반영이 중요하면 깨끗한 출력 디렉터리에서 재빌드하십시오.
+위의 이중 마운트 방식으로 같은 작업 폴더를 다시 마운트하면 기존 설정(x86_64: `workspace/buildroot/.config`, ARM64: `workspace/output-aarch64/.config`)과 빌드 결과가 남습니다. 기존 빌드를 재개할 때는 `/home/builduser/workspace/buildroot`에서 `make`만 실행하면 되며, 매번 defconfig를 복원할 필요는 없습니다. `make defconfig`는 현재 설정을 저장된 설정으로 다시 불러오므로, 기존 설정을 유지하려는 경우 실행하지 않습니다. 오버레이만 수정했다면 보통 `make`로 이미지를 재생성합니다. 삭제한 오버레이 파일은 기존 output/target에 남을 수 있어, 삭제 반영이 중요하면 깨끗한 출력 디렉터리에서 재빌드하십시오.
 
 호스트에서 변경을 확인하고 필요한 파일만 커밋합니다.
 
@@ -436,6 +436,12 @@ make
 ```
 
 이 방식으로 기존 경로를 복원한 뒤 사용자가 정상 동작을 확인했습니다. 설정 복원이나 output 삭제 없이 기존 빌드를 이어갈 수 있습니다. 호스트에 fakeroot 패키지를 추가 설치하는 대신 Buildroot의 `output/host` 도구가 참조하는 경로를 맞추는 것이 이 사례의 해결 방법입니다. 이후에도 빌드 경로를 유지하십시오.
+
+### Ubuntu에서 output/.config가 없다는 오류
+
+이전 build.sh는 x86_64 기본 빌드에서도 `output/.config`를 검사했습니다. 실제 설정은 `workspace/buildroot/.config`에 생성되므로 호환성 검사에서 잘못 중단되었습니다. 수정된 스크립트는 x86_64에서 일반 `make`와 같은 방식으로 실행하고 루트 .config를 검사합니다. ARM64는 기존처럼 별도 O 경로를 사용합니다.
+
+호스트 프로젝트 루트에서 `git pull`한 뒤 컨테이너에서 `/home/builduser/project/scripts/build.sh build`를 다시 실행하십시오. 이 오류의 복구에는 clean이나 defconfig 재적용이 필요하지 않습니다. 다만 이전 스크립트가 루트 .config를 이미 저장소 기본값으로 덮어썼을 수 있으므로, 기존 로컬 설정을 변경했다면 백업과 비교하십시오.
 
 ### 기타 문제
 
