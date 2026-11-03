@@ -141,21 +141,35 @@ Docker는 기본적으로 호스트 CPU에 맞는 Ubuntu 이미지를 사용합�
 
 Bootlin 공식 배포 툴체인은 [FAQ](https://toolchains.bootlin.com/faq.html)에 따르면 x86_64 실행용입니다. 따라서 ARM64에서는 같은 바이너리를 다운로드하지 않고 Buildroot 내부 툴체인 생성 기능을 사용합니다. 일반 배포판의 ARMv7용 크로스 컴파일러를 설치하는 방식도 사용하지 않습니다.
 
-위 Docker 실행 명령으로 컨테이너에 들어간 후 다음을 실행합니다.
+### 공통 이미지 빌드 명령: x86_64와 aarch64
+
+위 Docker 실행 명령으로 컨테이너에 들어간 후 **두 환경 모두 같은 명령**으로 전체 이미지를 빌드할 수 있습니다.
 
 ```bash
-# 컴파일러·glibc·sysroot만 먼저 준비
-/home/builduser/project/scripts/build.sh prepare
-
-# 준비된 툴체인을 재사용하여 전체 이미지 빌드
 /home/builduser/project/scripts/build.sh build
 ```
 
-처음부터 전체 빌드만 실행해도 필요한 툴체인을 자동 준비합니다.
+스크립트는 다음 순서로 실행됩니다.
+
+1. 컨테이너의 호스트 아키텍처(`uname -m`)를 확인하고 해당 설정 파일과 출력 폴더를 선택합니다.
+2. 사용할 .config가 없으면 `configs/`의 해당 defconfig를 `make defconfig`로 불러옵니다. 단순 복사가 아니라 기본값과 의존성을 반영한 전체 설정을 생성합니다.
+3. .config가 이미 있으면 다시 불러오지 않고 기존 설정을 검사하여 사용합니다. 따라서 `configs/` 수정이 기존 .config에 자동 반영되지는 않습니다.
+4. 필요한 툴체인을 준비하고 전체 이미지 빌드를 수행합니다. 이후 빌드에서는 남아 있는 툴체인과 중간 결과를 재사용합니다.
+
+**처음 clone한 환경에서도 별도의 `make defconfig` 또는 `prepare` 실행은 필요하지 않습니다.** 최초 준비의 서브모듈 초기화와 Wi-Fi 설정, Docker 이미지 생성·컨테이너 실행은 먼저 완료해야 합니다.
+
+`prepare`는 전체 이미지보다 툴체인만 먼저 준비하고 싶을 때 사용하는 선택 단계입니다.
 
 ```bash
-/home/builduser/project/scripts/build.sh
+/home/builduser/project/scripts/build.sh prepare
 ```
+
+인자를 생략한 `/home/builduser/project/scripts/build.sh`도 `build`와 동일하게 동작합니다.
+
+| 빌드 호스트 | 컨테이너에서 사용할 명령 | 최종 이미지(호스트 프로젝트 루트 기준) |
+| --- | --- | --- |
+| Ubuntu x86_64 | `/home/builduser/project/scripts/build.sh build` | `workspace/buildroot/output/images/sdcard.img` |
+| 파이 aarch64 | `/home/builduser/project/scripts/build.sh build` | `workspace/output-aarch64/images/sdcard.img` |
 
 ARM64의 최초 prepare는 GCC·binutils·glibc 등을 컴파일하므로 시간이 걸립니다. 이후 같은 출력 폴더를 유지하면 재사용합니다. 툴체인을 Docker 이미지에 미리 내장한 것은 아니며, 마운트된 호스트 폴더에 보존합니다. ARM64 출력 폴더에서 `make clean`을 하면 툴체인도 제거되어 다시 생성해야 합니다.
 
@@ -231,13 +245,23 @@ make -C /home/builduser/workspace/buildroot \
 
 Bash 패키지가 선택되어 있어도 시스템 기본 셸까지 Bash로 설정되었다고 단정할 수는 없습니다. sg의 로그인 셸은 사용자 테이블에 `/bin/bash`로 지정되어 있습니다.
 
-### 빌드
+### x86_64에서는 make만으로도 빌드 가능
+
+Ubuntu x86_64 컨테이너에서는 설정이 준비된 상태라면 기존 방식대로 Buildroot 디렉터리에서 `make`만 실행해도 됩니다. 공통 스크립트를 사용한 경우와 같은 설정 및 출력 폴더를 사용합니다.
 
 ```bash
+cd /home/builduser/workspace/buildroot
 make
 ```
 
-위 수동 `make`는 x86_64의 기존 기본 output에서 빌드할 때 사용합니다. ARM64에서는 `scripts/build.sh build`를 사용하십시오.
+처음 clone하여 .config가 없는 경우에는 공통 `build.sh build`가 최초 설정까지 자동 적용하므로 가장 간단합니다. 스크립트 없이 진행하려면 먼저 다음을 한 번 실행하고 이후부터 `make`를 사용하십시오.
+
+```bash
+make defconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_custom_defconfig
+make
+```
+
+위 `make defconfig`는 기존 설정을 다시 생성하므로 최초 설정 시에만 실행합니다. 파이 aarch64에서는 Buildroot 루트의 단순 `make`가 별도 ARM64 출력 폴더를 선택하지 않으므로 공통 스크립트를 사용하십시오.
 
 완료 후 이미지 경로(x86_64):
 
@@ -396,7 +420,7 @@ make defconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_cus
 make
 ```
 
-위의 이중 마운트 방식으로 같은 작업 폴더를 다시 마운트하면 기존 설정(x86_64: `workspace/buildroot/.config`, ARM64: `workspace/output-aarch64/.config`)과 빌드 결과가 남습니다. 기존 빌드를 재개할 때는 `/home/builduser/workspace/buildroot`에서 `make`만 실행하면 되며, 매번 defconfig를 복원할 필요는 없습니다. `make defconfig`는 현재 설정을 저장된 설정으로 다시 불러오므로, 기존 설정을 유지하려는 경우 실행하지 않습니다. 오버레이만 수정했다면 보통 `make`로 이미지를 재생성합니다. 삭제한 오버레이 파일은 기존 output/target에 남을 수 있어, 삭제 반영이 중요하면 깨끗한 출력 디렉터리에서 재빌드하십시오.
+위의 이중 마운트 방식으로 같은 작업 폴더를 다시 마운트하면 기존 설정(x86_64: `workspace/buildroot/.config`, ARM64: `workspace/output-aarch64/.config`)과 빌드 결과가 남습니다. 기존 빌드는 두 아키텍처 모두 `/home/builduser/project/scripts/build.sh build`로 재개합니다. x86_64에서는 `/home/builduser/workspace/buildroot`에서 `make`만 실행해도 됩니다. 매번 defconfig를 복원할 필요는 없습니다. `make defconfig`는 현재 설정을 저장된 설정으로 다시 불러오므로, 기존 설정을 유지하려는 경우 실행하지 않습니다. 오버레이만 수정했다면 보통 `make`로 이미지를 재생성합니다. 삭제한 오버레이 파일은 기존 output/target에 남을 수 있어, 삭제 반영이 중요하면 깨끗한 출력 디렉터리에서 재빌드하십시오.
 
 호스트에서 변경을 확인하고 필요한 파일만 커밋합니다.
 
