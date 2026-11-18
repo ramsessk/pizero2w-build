@@ -360,7 +360,7 @@ chmod 600 /etc/dropbear/dropbear_rsa_host_key
 
 부트 파티션을 읽기·쓰기로 마운트하며 일반 사용자에게도 쓰기 권한을 줍니다. 필요에 따라 권한을 제한하십시오.
 
-오버레이의 `boot/firmware/config.txt`에는 `dtparam=i2c_arm=on`이 있지만, 부트 파티션을 이 경로에 마운트하면 루트 파일시스템의 해당 파일은 가려집니다. **오버레이에 파일이 있다는 사실만으로 실제 FAT 부트 파티션에 I2C 설정이 반영되지는 않습니다.** 이미지 생성에 사용하는 `board/raspberrypi0w/config_0w.txt`와 부팅 후 실제 `/boot/firmware/config.txt`를 확인하십시오.
+오버레이의 `boot/firmware/config.txt`에는 `dtparam=i2c_arm=on`이 있지만, 부트 파티션을 이 경로에 마운트하면 루트 파일시스템의 해당 파일은 가려집니다. **오버레이에 파일이 있다는 사실만으로 실제 FAT 부트 파티션에 I2C 설정이 반영되지는 않습니다.** 프로젝트의 `board/pizero/post-image.sh`가 표준 Raspberry Pi post-image 스크립트보다 먼저 실행되어 `images/rpi-firmware/config.txt` 끝의 `[all]` 구역에 `dtparam=i2c_arm=on`을 추가합니다. 그 후 genimage가 FAT 부트 이미지와 sdcard.img를 생성하므로 증분 빌드에도 반영됩니다.
 
 `etc/modules`에는 i2c-bcm2835와 i2c-dev가 지정되어 있고, `S30wifi_load`가 이를 로드합니다. mdev 규칙과 시작 스크립트는 I2C 장치에 0666 권한을 부여합니다. 이는 모든 사용자에게 장치 접근을 허용하는 현재 개발용 구성입니다.
 
@@ -411,7 +411,242 @@ python3 test_oled.py
 
 SMBus 전송 크기 제한에 맞춰 컨트롤 바이트 `int(buf[0])`와 데이터 영역을 분리하고, 데이터를 16바이트씩 나누어 전송합니다. 화면에는 제목·로컬 IPv4 주소·날짜·시각을 표시합니다. 날짜·시각은 1초마다, IP 주소는 5초마다 갱신합니다. IP는 wlan0, eth0, 나머지 비루프백 인터페이스 순서로 조회하며 주소가 없으면 `IP: No network`로 표시합니다. 인터넷이나 DNS 접속 없이 Python 표준 라이브러리로 조회하므로 추가 패키지는 필요 없습니다. Ctrl+C로 종료하면 화면을 지웁니다. 시스템 시각이 맞지 않으면 OLED 표시도 틀립니다.
 
-현재 저장소에는 OLED 시계를 부팅 시 자동 실행하는 init 스크립트가 없습니다. 위 명령으로 수동 실행합니다.
+OLED는 `/etc/init.d/S99oled`에서 부팅 시 root 권한으로 백그라운드 실행됩니다. 날짜·IP는 계속 갱신되므로 네트워크·NTP 연결을 기다리지 않습니다. I2C 장치가 없으면 메시지를 출력하고 부팅을 계속하며, Python 오류는 `/var/log/oled-clock.log`에 기록됩니다. 자동 재시작 감시 기능은 없으며 오류 해결 후 restart로 다시 실행합니다.
+
+장비에서 서비스 관리는 root로 실행합니다.
+
+```bash
+/etc/init.d/S99oled status
+/etc/init.d/S99oled stop
+/etc/init.d/S99oled start
+/etc/init.d/S99oled restart
+tail -n 50 /var/log/oled-clock.log
+```
+
+수동 테스트 전에는 서비스를 stop하여 같은 디스플레이를 동시에 제어하지 않도록 하십시오. 서비스 종료 시 SIGTERM을 처리해 화면을 지웁니다. 로그는 현재 /var/log의 파일시스템 정책을 따르며 별도 회전 설정은 없습니다.
+
+기존 작업 폴더에서는 호스트에서 git pull 후 컨테이너에서 다음을 실행하면 됩니다.
+
+```bash
+/home/builduser/project/scripts/build.sh build
+```
+
+스크립트는 기존 .config의 post-image 목록 앞에 I2C 훅을 추가하고 이전 설정을 `.config.before-i2c-hook`에 한 번 보관합니다. 다른 설정은 유지합니다. 최초 clone의 두 defconfig에도 같은 훅이 설정되어 있습니다. 기존 x86_64 환경에서 직접 make만 사용했다면 이번 변경 적용 시에는 build.sh build를 한 번 실행하여 훅을 등록한 뒤 이후부터 make를 사용하십시오. clean은 필요하지 않습니다.
+
+빌드 후 호스트 프로젝트 루트에서 실제 이미지 입력 설정을 확인할 수 있습니다.
+
+```bash
+# Ubuntu x86_64
+grep -A2 '^# pizero2w-build: I2C
+
+## 설정 백업과 반복 빌드
+
+x86_64는 컨테이너의 Buildroot 디렉터리에서 설정을 저장합니다. ARM64 설정은 별도 명령으로 저장하여 기존 Bootlin 설정을 덮어쓰지 않습니다.
+
+```bash
+make -C /home/builduser/workspace/buildroot \
+  O=/home/builduser/project/workspace/output-aarch64 savedefconfig \
+  BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_aarch64_host_defconfig
+```
+
+다음 기존 백업·복원 명령은 x86_64용입니다.
+
+```bash
+make savedefconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_custom_defconfig
+```
+
+다른 환경에서 복원할 때:
+
+```bash
+make defconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_custom_defconfig
+make
+```
+
+위의 이중 마운트 방식으로 같은 작업 폴더를 다시 마운트하면 기존 설정(x86_64: `workspace/buildroot/.config`, ARM64: `workspace/output-aarch64/.config`)과 빌드 결과가 남습니다. 기존 빌드는 두 아키텍처 모두 `/home/builduser/project/scripts/build.sh build`로 재개합니다. x86_64에서는 `/home/builduser/workspace/buildroot`에서 `make`만 실행해도 됩니다. 매번 defconfig를 복원할 필요는 없습니다. `make defconfig`는 현재 설정을 저장된 설정으로 다시 불러오므로, 기존 설정을 유지하려는 경우 실행하지 않습니다. 오버레이만 수정했다면 보통 `make`로 이미지를 재생성합니다. 삭제한 오버레이 파일은 기존 output/target에 남을 수 있어, 삭제 반영이 중요하면 깨끗한 출력 디렉터리에서 재빌드하십시오.
+
+호스트에서 변경을 확인하고 필요한 파일만 커밋합니다.
+
+```bash
+git diff -- configs/raspberrypizero_custom_defconfig workspace/rootfs-overlay workspace/users.txt
+git status --short
+```
+
+서브모듈 내부 수정은 메인 저장소 커밋만으로 보존되지 않습니다. 별도 패치 또는 접근 가능한 fork에 커밋·푸시한 뒤 메인 저장소에서 서브모듈 커밋을 갱신해야 합니다.
+
+## 문제 해결
+
+### fakeroot가 libfakeroot.so를 찾지 못하는 경우
+
+```text
+fakeroot: preload library `libfakeroot.so' not found, aborting.
+```
+
+기존 output을 유지한 채 컨테이너 내부 빌드 경로를 바꾸면 발생할 수 있습니다. 실제 확인 사례에서는 라이브러리가 `output/host/lib/libfakeroot.so`에 존재했지만, fakeroot 스크립트의 FAKEROOT_PREFIX·FAKEROOT_BINDIR·PATHS는 이전 `/home/builduser/workspace/buildroot/output/host` 경로를 참조하고 있었습니다.
+
+컨테이너의 Buildroot 디렉터리에서 확인합니다.
+
+```bash
+grep -nE '/home/builduser|libfakeroot|FAKEROOT' output/host/bin/fakeroot
+find output/host -name 'libfakeroot*'
+```
+
+복구 절차:
+
+1. 현재 컨테이너에서 `exit`합니다.
+2. 호스트 프로젝트 루트에서 [Docker 빌드 환경](#docker-빌드-환경)의 이중 마운트 명령으로 다시 실행합니다.
+3. 컨테이너에서 다음 명령으로 fakeroot를 확인하고 빌드를 재개합니다.
+
+```bash
+output/host/bin/fakeroot /bin/true
+make
+```
+
+이 방식으로 기존 경로를 복원한 뒤 사용자가 정상 동작을 확인했습니다. 설정 복원이나 output 삭제 없이 기존 빌드를 이어갈 수 있습니다. 호스트에 fakeroot 패키지를 추가 설치하는 대신 Buildroot의 `output/host` 도구가 참조하는 경로를 맞추는 것이 이 사례의 해결 방법입니다. 이후에도 빌드 경로를 유지하십시오.
+
+### Ubuntu에서 output/.config가 없다는 오류
+
+이전 build.sh는 x86_64 기본 빌드에서도 `output/.config`를 검사했습니다. 실제 설정은 `workspace/buildroot/.config`에 생성되므로 호환성 검사에서 잘못 중단되었습니다. 수정된 스크립트는 x86_64에서 일반 `make`와 같은 방식으로 실행하고 루트 .config를 검사합니다. ARM64는 기존처럼 별도 O 경로를 사용합니다.
+
+호스트 프로젝트 루트에서 `git pull`한 뒤 컨테이너에서 `/home/builduser/project/scripts/build.sh build`를 다시 실행하십시오. 이 오류의 복구에는 clean이나 defconfig 재적용이 필요하지 않습니다. 다만 이전 스크립트가 루트 .config를 이미 저장소 기본값으로 덮어썼을 수 있으므로, 기존 로컬 설정을 변경했다면 백업과 비교하십시오.
+
+### 기타 문제
+
+| 증상 | 확인할 내용 |
+| --- | --- |
+| Docker 빌드의 UID/GID 생성 오류 | 호스트 UID/GID가 이미지의 기존 계정·그룹과 충돌하는지 확인 |
+| Wi-Fi 연결 실패 | 실제 wpa_supplicant.conf 존재, SSID/PSK, `ip addr show wlan0`, `dmesg \| tail` |
+| Wi-Fi 펌웨어 로드 실패 | brcmfmac 모듈, /lib/firmware/brcm 파일과 심볼릭 링크, 대상 모델 |
+| SSH 접속 종료 | Dropbear 프로세스, /etc/dropbear 키와 권한, 장비 콘솔 로그 |
+| SSH 호스트 키 변경 경고 | 재기록·키 교체 여부와 새 지문을 먼저 확인한 뒤 `ssh-keygen -R <IP>` |
+| sg 로그인 실패 | workspace/users.txt, /bin/bash 존재, /etc/shells, 홈 디렉터리 |
+| /dev/i2c-1 없음 | 실제 부트 파티션의 I2C 설정, 커널 모듈, S30wifi_load 실행 여부 |
+| OLED가 보이지 않음 | 배선, I2C 버스·주소, smbus/Pillow import, 모듈 전압과 화면 규격 |
+| 시간 또는 날짜 오류 | S49ntp 실행 상태, /etc/ntp.conf, 네트워크·DNS·UDP 123 통신, Asia/Seoul 설정 |
+| 파일시스템 생성 공간 부족 | ext 파일시스템 크기(현재 120M)와 패키지 크기 |
+
+## 현재 확인이 필요한 사항
+
+문서 통합 과정에서 확인한 아래 항목은 코드·설정 변경을 수행한 것이 아니라, 현재 저장소와 이전 문서 사이의 차이를 기록한 것입니다.
+
+1. **보드 대상:** Pi Zero 2 W를 목표로 시작했으나 실제 이미지 다운로드와 테스트는 Pi Zero W에서 진행했습니다. 현재 defconfig·DTB·펌웨어 설정은 Pi Zero W용이며, Zero 2 W 지원은 별도 확인이 필요합니다.
+2. **시각 동기화:** 이전 S45ntpdate의 블로킹 명령을 제거하고 표준 S49ntp로 통일했습니다. 실제 장비에서 네트워크 연결 후 동기화 여부를 확인해야 합니다.
+3. **I2C 부트 설정:** post-image 훅에서 실제 FAT 부트 설정에 I2C를 활성화합니다. S99oled로 자동 실행하며 재빌드 후 장비 동작 확인이 필요합니다.
+4. **재현 가능한 커널 설정:** menuconfig 및 linux-menuconfig에서 로컬로 바꾼 값이 저장된 defconfig에 모두 반영되었는지 확인해야 합니다. 별도 커스텀 커널 설정 파일은 현재 메인 저장소에 없습니다.
+5. **계정과 SSH 키:** 기본 비밀번호, 공개된 호스트 개인키, 빈 비밀번호 허용 옵션은 운영 전 변경 대상입니다.
+6. **중복 사용자 파일:** 실제 빌드는 workspace/users.txt를 참조합니다. 루트의 users.txt만 수정하면 적용되지 않습니다.
+7. **firmware 서브모듈:** 현재 빌드에 직접 연결되어 있지 않습니다. 업데이트만으로 오버레이의 펌웨어가 바뀌지 않습니다.
+
+통합 전 문서는 [README 원본](docs/backup/README.md)과 [README2 원본](docs/backup/README2.md)에 내용 변경 없이 보관했습니다. 현재 사용 절차는 이 README를 기준으로 합니다.
+
+실제 이미지 다운로드와 테스트는 프로젝트 개발자가 Pi Zero W에서 수행했습니다. 이 README는 해당 개발 이력과 저장된 설정·스크립트를 기준으로 정리했으며, 문서 편집 과정에서 별도의 이미지 빌드 및 보드 부팅 재검증은 수행하지 않았습니다.
+ workspace/buildroot/output/images/rpi-firmware/config.txt
+# ARM64 파이
+grep -A2 '^# pizero2w-build: I2C
+
+## 설정 백업과 반복 빌드
+
+x86_64는 컨테이너의 Buildroot 디렉터리에서 설정을 저장합니다. ARM64 설정은 별도 명령으로 저장하여 기존 Bootlin 설정을 덮어쓰지 않습니다.
+
+```bash
+make -C /home/builduser/workspace/buildroot \
+  O=/home/builduser/project/workspace/output-aarch64 savedefconfig \
+  BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_aarch64_host_defconfig
+```
+
+다음 기존 백업·복원 명령은 x86_64용입니다.
+
+```bash
+make savedefconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_custom_defconfig
+```
+
+다른 환경에서 복원할 때:
+
+```bash
+make defconfig BR2_DEFCONFIG=/home/builduser/project/configs/raspberrypizero_custom_defconfig
+make
+```
+
+위의 이중 마운트 방식으로 같은 작업 폴더를 다시 마운트하면 기존 설정(x86_64: `workspace/buildroot/.config`, ARM64: `workspace/output-aarch64/.config`)과 빌드 결과가 남습니다. 기존 빌드는 두 아키텍처 모두 `/home/builduser/project/scripts/build.sh build`로 재개합니다. x86_64에서는 `/home/builduser/workspace/buildroot`에서 `make`만 실행해도 됩니다. 매번 defconfig를 복원할 필요는 없습니다. `make defconfig`는 현재 설정을 저장된 설정으로 다시 불러오므로, 기존 설정을 유지하려는 경우 실행하지 않습니다. 오버레이만 수정했다면 보통 `make`로 이미지를 재생성합니다. 삭제한 오버레이 파일은 기존 output/target에 남을 수 있어, 삭제 반영이 중요하면 깨끗한 출력 디렉터리에서 재빌드하십시오.
+
+호스트에서 변경을 확인하고 필요한 파일만 커밋합니다.
+
+```bash
+git diff -- configs/raspberrypizero_custom_defconfig workspace/rootfs-overlay workspace/users.txt
+git status --short
+```
+
+서브모듈 내부 수정은 메인 저장소 커밋만으로 보존되지 않습니다. 별도 패치 또는 접근 가능한 fork에 커밋·푸시한 뒤 메인 저장소에서 서브모듈 커밋을 갱신해야 합니다.
+
+## 문제 해결
+
+### fakeroot가 libfakeroot.so를 찾지 못하는 경우
+
+```text
+fakeroot: preload library `libfakeroot.so' not found, aborting.
+```
+
+기존 output을 유지한 채 컨테이너 내부 빌드 경로를 바꾸면 발생할 수 있습니다. 실제 확인 사례에서는 라이브러리가 `output/host/lib/libfakeroot.so`에 존재했지만, fakeroot 스크립트의 FAKEROOT_PREFIX·FAKEROOT_BINDIR·PATHS는 이전 `/home/builduser/workspace/buildroot/output/host` 경로를 참조하고 있었습니다.
+
+컨테이너의 Buildroot 디렉터리에서 확인합니다.
+
+```bash
+grep -nE '/home/builduser|libfakeroot|FAKEROOT' output/host/bin/fakeroot
+find output/host -name 'libfakeroot*'
+```
+
+복구 절차:
+
+1. 현재 컨테이너에서 `exit`합니다.
+2. 호스트 프로젝트 루트에서 [Docker 빌드 환경](#docker-빌드-환경)의 이중 마운트 명령으로 다시 실행합니다.
+3. 컨테이너에서 다음 명령으로 fakeroot를 확인하고 빌드를 재개합니다.
+
+```bash
+output/host/bin/fakeroot /bin/true
+make
+```
+
+이 방식으로 기존 경로를 복원한 뒤 사용자가 정상 동작을 확인했습니다. 설정 복원이나 output 삭제 없이 기존 빌드를 이어갈 수 있습니다. 호스트에 fakeroot 패키지를 추가 설치하는 대신 Buildroot의 `output/host` 도구가 참조하는 경로를 맞추는 것이 이 사례의 해결 방법입니다. 이후에도 빌드 경로를 유지하십시오.
+
+### Ubuntu에서 output/.config가 없다는 오류
+
+이전 build.sh는 x86_64 기본 빌드에서도 `output/.config`를 검사했습니다. 실제 설정은 `workspace/buildroot/.config`에 생성되므로 호환성 검사에서 잘못 중단되었습니다. 수정된 스크립트는 x86_64에서 일반 `make`와 같은 방식으로 실행하고 루트 .config를 검사합니다. ARM64는 기존처럼 별도 O 경로를 사용합니다.
+
+호스트 프로젝트 루트에서 `git pull`한 뒤 컨테이너에서 `/home/builduser/project/scripts/build.sh build`를 다시 실행하십시오. 이 오류의 복구에는 clean이나 defconfig 재적용이 필요하지 않습니다. 다만 이전 스크립트가 루트 .config를 이미 저장소 기본값으로 덮어썼을 수 있으므로, 기존 로컬 설정을 변경했다면 백업과 비교하십시오.
+
+### 기타 문제
+
+| 증상 | 확인할 내용 |
+| --- | --- |
+| Docker 빌드의 UID/GID 생성 오류 | 호스트 UID/GID가 이미지의 기존 계정·그룹과 충돌하는지 확인 |
+| Wi-Fi 연결 실패 | 실제 wpa_supplicant.conf 존재, SSID/PSK, `ip addr show wlan0`, `dmesg \| tail` |
+| Wi-Fi 펌웨어 로드 실패 | brcmfmac 모듈, /lib/firmware/brcm 파일과 심볼릭 링크, 대상 모델 |
+| SSH 접속 종료 | Dropbear 프로세스, /etc/dropbear 키와 권한, 장비 콘솔 로그 |
+| SSH 호스트 키 변경 경고 | 재기록·키 교체 여부와 새 지문을 먼저 확인한 뒤 `ssh-keygen -R <IP>` |
+| sg 로그인 실패 | workspace/users.txt, /bin/bash 존재, /etc/shells, 홈 디렉터리 |
+| /dev/i2c-1 없음 | 실제 부트 파티션의 I2C 설정, 커널 모듈, S30wifi_load 실행 여부 |
+| OLED가 보이지 않음 | 배선, I2C 버스·주소, smbus/Pillow import, 모듈 전압과 화면 규격 |
+| 시간 또는 날짜 오류 | S49ntp 실행 상태, /etc/ntp.conf, 네트워크·DNS·UDP 123 통신, Asia/Seoul 설정 |
+| 파일시스템 생성 공간 부족 | ext 파일시스템 크기(현재 120M)와 패키지 크기 |
+
+## 현재 확인이 필요한 사항
+
+문서 통합 과정에서 확인한 아래 항목은 코드·설정 변경을 수행한 것이 아니라, 현재 저장소와 이전 문서 사이의 차이를 기록한 것입니다.
+
+1. **보드 대상:** Pi Zero 2 W를 목표로 시작했으나 실제 이미지 다운로드와 테스트는 Pi Zero W에서 진행했습니다. 현재 defconfig·DTB·펌웨어 설정은 Pi Zero W용이며, Zero 2 W 지원은 별도 확인이 필요합니다.
+2. **시각 동기화:** 이전 S45ntpdate의 블로킹 명령을 제거하고 표준 S49ntp로 통일했습니다. 실제 장비에서 네트워크 연결 후 동기화 여부를 확인해야 합니다.
+3. **I2C 부트 설정:** 루트 오버레이의 config.txt와 실제 FAT 부트 파티션 설정을 구분해야 합니다.
+4. **재현 가능한 커널 설정:** menuconfig 및 linux-menuconfig에서 로컬로 바꾼 값이 저장된 defconfig에 모두 반영되었는지 확인해야 합니다. 별도 커스텀 커널 설정 파일은 현재 메인 저장소에 없습니다.
+5. **계정과 SSH 키:** 기본 비밀번호, 공개된 호스트 개인키, 빈 비밀번호 허용 옵션은 운영 전 변경 대상입니다.
+6. **중복 사용자 파일:** 실제 빌드는 workspace/users.txt를 참조합니다. 루트의 users.txt만 수정하면 적용되지 않습니다.
+7. **firmware 서브모듈:** 현재 빌드에 직접 연결되어 있지 않습니다. 업데이트만으로 오버레이의 펌웨어가 바뀌지 않습니다.
+
+통합 전 문서는 [README 원본](docs/backup/README.md)과 [README2 원본](docs/backup/README2.md)에 내용 변경 없이 보관했습니다. 현재 사용 절차는 이 README를 기준으로 합니다.
+
+실제 이미지 다운로드와 테스트는 프로젝트 개발자가 Pi Zero W에서 수행했습니다. 이 README는 해당 개발 이력과 저장된 설정·스크립트를 기준으로 정리했으며, 문서 편집 과정에서 별도의 이미지 빌드 및 보드 부팅 재검증은 수행하지 않았습니다.
+ workspace/output-aarch64/images/rpi-firmware/config.txt
+```
+
+각 환경의 새 sdcard.img를 SD 카드에 기록해야 부트 설정과 자동 실행이 장비에 적용됩니다.
 
 ## 설정 백업과 반복 빌드
 

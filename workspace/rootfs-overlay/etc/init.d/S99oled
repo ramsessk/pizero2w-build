@@ -1,0 +1,62 @@
+#!/bin/sh
+# OLED clock service. Run as root to access I2C independently of login.
+PIDFILE=/var/run/oled-clock.pid
+LOGFILE=/var/log/oled-clock.log
+PROGRAM=/home/sg/oled-test/test_oled.py
+
+running() {
+    [ -r "$PIDFILE" ] || return 1
+    read -r pid < "$PIDFILE"
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    kill -0 "$pid" 2>/dev/null || return 1
+    # Ignore stale/reused PIDs and exited processes awaiting reaping.
+    case "$(tr '\\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null)" in
+        *"$PROGRAM"*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+case "$1" in
+    start)
+        if running; then echo "OLED clock already running"; exit 0; fi
+        rm -f "$PIDFILE"
+        modprobe i2c-dev 2>/dev/null || true
+        modprobe i2c-bcm2835 2>/dev/null || true
+        if [ ! -c /dev/i2c-1 ]; then
+            echo "OLED clock skipped: /dev/i2c-1 missing (check boot config)"
+            exit 0
+        fi
+        [ -f "$PROGRAM" ] || { echo "OLED program missing"; exit 1; }
+        mkdir -p /var/run /var/log
+        start-stop-daemon -S -b -m -p "$PIDFILE" -x /bin/sh -- -c \
+            'exec /usr/bin/python3 -u "$1" >> "$2" 2>&1' sh "$PROGRAM" "$LOGFILE"
+        ;;
+    stop)
+        if running; then
+            start-stop-daemon -K -p "$PIDFILE" -s TERM
+            # Give Python time to clear the display before another instance starts.
+            count=0
+            while running && [ "$count" -lt 3 ]; do
+                sleep 1
+                count=$((count + 1))
+            done
+            if running; then
+                echo "OLED clock is still stopping" >&2
+                exit 1
+            fi
+        fi
+        rm -f "$PIDFILE"
+        ;;
+    restart|reload)
+        "$0" stop && "$0" start
+        ;;
+    status)
+        if running; then echo "OLED clock running (pid $pid)"; else
+            echo "OLED clock stopped"; exit 1
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload|status}" >&2
+        exit 1
+        ;;
+esac

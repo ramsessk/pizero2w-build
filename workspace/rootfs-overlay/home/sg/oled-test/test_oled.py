@@ -1,6 +1,7 @@
 import datetime
 import fcntl
 import socket
+import signal
 import struct
 import time
 from smbus import SMBus
@@ -88,6 +89,14 @@ print("OLED 실시간 시계 및 IP 표시 시작... (종료하려면 Ctrl+C)")
 
 ip_address = "No network"
 next_ip_check = 0.0
+
+def stop_requested(signum, frame):
+    raise KeyboardInterrupt
+
+
+# The init service sends SIGTERM; clear the display just like Ctrl+C.
+signal.signal(signal.SIGTERM, stop_requested)
+signal.signal(signal.SIGINT, stop_requested)
 
 try:
     while True:

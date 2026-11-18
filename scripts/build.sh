@@ -57,6 +57,31 @@ else
     mkdir -p "$out"
     make -C "$br" "${make_output_args[@]}" BR2_DEFCONFIG="$config" defconfig
 fi
+
+# Install the project boot-image hook for existing configurations too.
+# Only change the hook list; preserve all user-selected packages and toolchain.
+hook="../../board/pizero/post-image.sh"
+if ! grep -q 'board/pizero/post-image.sh' "$config_path"; then
+    cp -p "$config_path" "$config_path.before-i2c-hook"
+    tmp_config="$(mktemp "$config_path.XXXXXX")"
+    awk -v hook="$hook" '
+        BEGIN { quote=sprintf("%c", 34) }
+        /^BR2_ROOTFS_POST_IMAGE_SCRIPT=/ {
+            value=substr($0, length("BR2_ROOTFS_POST_IMAGE_SCRIPT=")+1)
+            if (substr(value,1,1)==quote) value=substr(value,2,length(value)-2)
+            print "BR2_ROOTFS_POST_IMAGE_SCRIPT=" quote hook " " value quote
+            found=1
+            next
+        }
+        { print }
+        END {
+            if (!found) print "BR2_ROOTFS_POST_IMAGE_SCRIPT=" quote hook " board/raspberrypi/post-image.sh" quote
+        }
+    ' "$config_path" > "$tmp_config"
+    mv "$tmp_config" "$config_path"
+    echo "Enabled I2C boot-image hook; previous config: $config_path.before-i2c-hook"
+fi
+
 # Always check the resolved configuration, including after first initialization.
 check_config
 uname -m > "$out/.pizero-build-host"
