@@ -302,7 +302,16 @@ ssh sg@<라즈베리파이_IP>
 
 ### 사용자와 권한
 
-`workspace/users.txt`는 사용자명·UID·그룹명·GID·비밀번호·홈·셸·추가 그룹·설명 순서의 테이블입니다. sg는 `/home/sg`, `/bin/bash`, sudo/audio/video 그룹으로 정의되어 있습니다. 설명은 공백 없는 문자열로 관리하면 필드 혼동을 줄일 수 있습니다.
+`workspace/users.txt`는 사용자명·UID·그룹명·GID·비밀번호·홈·셸·추가 그룹·설명 순서의 테이블입니다.
+
+**평문 비밀번호는 반드시 `=` 접두사를 붙입니다.** 예를 들어 실제 로그인 비밀번호가 `raspberry`라면 사용자 테이블에는 `=raspberry`로 적습니다. 접두사 없는 값은 암호화된 해시로 취급되므로 `raspberry`만 적으면 shadow에 평문이 들어가 로그인이 실패합니다.
+
+```text
+sg -1 sg -1 =raspberry /home/sg /bin/bash sudo,audio,video RaspberryPi_User
+```
+
+장비에서 root로 `passwd sg`를 실행하면 현재 SD 카드는 복구되지만, 재빌드 후에도 유지하려면 빌드 호스트의 `workspace/users.txt`도 수정해야 합니다. 프로젝트 루트의 `users.txt`는 사본이며 실제 적용 파일은 `workspace/users.txt`입니다. 수정 후 `scripts/build.sh build`로 증분 빌드하면 이미지 생성 시 비밀번호가 해시로 변환됩니다. 전체 clean은 필요하지 않습니다.
+ sg는 `/home/sg`, `/bin/bash`, sudo/audio/video 그룹으로 정의되어 있습니다. 설명은 공백 없는 문자열로 관리하면 필드 혼동을 줄일 수 있습니다.
 
 `etc/shells`에는 Bash 경로가 등록되어 있습니다. 현재 defconfig에는 sudo가 포함되어 있으므로 기존 문서의 “sudo 제외” 설명은 적용되지 않습니다. 필요하면 다음으로 root 계정에 진입합니다.
 

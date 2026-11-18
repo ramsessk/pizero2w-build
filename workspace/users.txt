@@ -1,2 +1,3 @@
+# 비밀번호: 평문은 = 접두사 필수 (예: =raspberry). 접두사가 없으면 이미 생성된 해시로 처리됩니다.
 # [유저명] [유저ID] [그룹명] [그룹ID] [비밀번호] [홈디렉터리] [기본셸] [소속그룹들] [설명]
-sg -1 sg -1 raspberry /home/sg /bin/bash sudo,audio,video RaspberryPi_User
+sg -1 sg -1 =raspberry /home/sg /bin/bash sudo,audio,video RaspberryPi_User
