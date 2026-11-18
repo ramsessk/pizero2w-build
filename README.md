@@ -41,7 +41,8 @@ Docker와 Buildroot로 Raspberry Pi용 Linux 이미지를 만들고, Wi-Fi·SSH�
 | `etc/network/interfaces` | wlan0 DHCP와 wpa_supplicant 실행 |
 | `etc/wpa_supplicant/wpa_supplicant.conf.example` | Wi-Fi 설정 템플릿 |
 | `etc/init.d/S30wifi_load` | brcmfmac 및 /etc/modules 로드, I2C 권한 설정 |
-| `etc/init.d/S45ntpdate` | 현재는 ntpd 명령으로 부팅 시각 동기화 시도 |
+| `etc/init.d/S45ntpdate` | 이전 스크립트를 덮어쓰는 호환용 파일, NTP를 실행하지 않음 |
+| `/etc/init.d/S49ntp` (패키지에서 설치) | 표준 ntpd를 백그라운드로 시작 |
 | `etc/init.d/S50dropbear` | SSH 서버 시작·중지·재시작 |
 | `etc/dropbear/` | SSH 호스트 키 |
 | `etc/fstab` | 루트·가상 파일시스템 및 부트 파티션 마운트 |
@@ -356,20 +357,26 @@ chmod 600 /etc/dropbear/dropbear_rsa_host_key
 
 ### 시간 동기화
 
-현재 `S45ntpdate`는 이름과 달리 다음 명령을 실행합니다.
+시간 동기화는 NTP 패키지가 설치하는 표준 `/etc/init.d/S49ntp`가 담당합니다. `ntpd -g`를 데몬으로 실행하고 `/etc/ntp.conf`의 서버를 사용합니다. 패키지 기본 설정은 pool.ntp.org 서버들을 사용합니다. 동기화 완료를 기다리지 않고 다음 부팅 단계로 진행합니다. 네트워크가 연결된 후 실제 시각이 맞는지 확인하십시오.
 
-```text
-ntpd -q -n -p ://google.com
-```
+기존 `S45ntpdate`는 아무 작업 없이 반환하는 호환용 스크립트로 유지합니다. 이 파일을 삭제만 하면 증분 빌드의 target에 이전 파일이 남을 수 있으므로, 명시적으로 덮어써 부팅을 막던 명령이 다시 실행되지 않게 합니다.
 
-`://google.com`은 잘못된 서버 주소입니다. 따라서 현재 스크립트를 정상적인 시간 동기화 구현으로 간주할 수 없습니다. 사용하는 ntpd가 BusyBox판인지 NTP 패키지판인지 `ntpd --help`로 확인한 뒤 해당 구현의 옵션에 맞게 수정해야 합니다. 독립 ntpdate를 선택했다면 root에서 다음과 같이 점검할 수 있습니다.
+기존 오류 로그의 `ntpd -q -n -p ://google.com`은 NTP 4.2.8용 옵션과 맞지 않습니다. 이 구현의 `-p`는 서버 주소가 아닌 PID 파일 경로이며, `-n`은 포그라운드 실행입니다. DHCP 주소도 받지 못한 상태에서 `-q`로 동기화를 기다려 SSH 시작과 로그인 프롬프트가 지연될 수 있었습니다.
+
+네트워크 설정은 wlan0를 자동 시작하며, 내장 Ethernet이 없는 Pi Zero W에서 `eth0`는 자동 시작하지 않습니다. USB Ethernet을 추가했다면 장치 존재를 확인한 후 `ifup eth0`로 시작할 수 있습니다.
+
+부팅 후 장비에서 확인합니다.
 
 ```bash
-ntpdate -u time.google.com
+ip addr show wlan0
+wpa_cli -i wlan0 status
+ps | grep '[n]tpd'
 date
 ```
 
-NTP는 시스템 시각을 맞추며, 화면의 한국 시각 표시는 시간대 설정이 담당합니다. 외장 RTC가 없는 보드에서는 `hwclock -w`가 실패할 수 있으므로 이를 필수 단계로 두지 않습니다.
+`wpa_state=COMPLETED`인데 IPv4가 없다면 DHCP·공유기 상태를 확인하고 root에서 `udhcpc -i wlan0`로 다시 요청할 수 있습니다. 연결 자체가 완료되지 않았다면 장비의 `/etc/wpa_supplicant/wpa_supplicant.conf`와 SSID·비밀번호를 확인하십시오. 실제 Wi-Fi 설정 파일은 Git에서 제외되므로 빌드 호스트마다 별도로 준비해야 합니다.
+
+NTP는 시스템 시각을 맞추며, 한국 시각 표시는 Asia/Seoul 시간대 설정이 담당합니다. 외장 RTC가 없는 보드에서는 `hwclock -w`를 필수 단계로 두지 않습니다.
 
 ## SSD1306 OLED 시계
 
@@ -479,7 +486,7 @@ make
 | sg 로그인 실패 | workspace/users.txt, /bin/bash 존재, /etc/shells, 홈 디렉터리 |
 | /dev/i2c-1 없음 | 실제 부트 파티션의 I2C 설정, 커널 모듈, S30wifi_load 실행 여부 |
 | OLED가 보이지 않음 | 배선, I2C 버스·주소, smbus/Pillow import, 모듈 전압과 화면 규격 |
-| 시간 또는 날짜 오류 | 잘못된 NTP 주소, 네트워크·DNS·UDP 123 통신, Asia/Seoul 설정 |
+| 시간 또는 날짜 오류 | S49ntp 실행 상태, /etc/ntp.conf, 네트워크·DNS·UDP 123 통신, Asia/Seoul 설정 |
 | 파일시스템 생성 공간 부족 | ext 파일시스템 크기(현재 120M)와 패키지 크기 |
 
 ## 현재 확인이 필요한 사항
@@ -487,7 +494,7 @@ make
 문서 통합 과정에서 확인한 아래 항목은 코드·설정 변경을 수행한 것이 아니라, 현재 저장소와 이전 문서 사이의 차이를 기록한 것입니다.
 
 1. **보드 대상:** Pi Zero 2 W를 목표로 시작했으나 실제 이미지 다운로드와 테스트는 Pi Zero W에서 진행했습니다. 현재 defconfig·DTB·펌웨어 설정은 Pi Zero W용이며, Zero 2 W 지원은 별도 확인이 필요합니다.
-2. **시각 동기화:** S45ntpdate의 잘못된 서버 주소와 실제 ntpd 구현에 맞는 옵션 수정이 필요합니다.
+2. **시각 동기화:** 이전 S45ntpdate의 블로킹 명령을 제거하고 표준 S49ntp로 통일했습니다. 실제 장비에서 네트워크 연결 후 동기화 여부를 확인해야 합니다.
 3. **I2C 부트 설정:** 루트 오버레이의 config.txt와 실제 FAT 부트 파티션 설정을 구분해야 합니다.
 4. **재현 가능한 커널 설정:** menuconfig 및 linux-menuconfig에서 로컬로 바꾼 값이 저장된 defconfig에 모두 반영되었는지 확인해야 합니다. 별도 커스텀 커널 설정 파일은 현재 메인 저장소에 없습니다.
 5. **계정과 SSH 키:** 기본 비밀번호, 공개된 호스트 개인키, 빈 비밀번호 허용 옵션은 운영 전 변경 대상입니다.

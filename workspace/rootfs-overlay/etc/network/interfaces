@@ -1,12 +1,13 @@
-   auto lo
-   iface lo inet loopback
+auto lo
+iface lo inet loopback
 
-   auto eth0
-   iface eth0 inet dhcp
+# Optional USB Ethernet can be brought up manually with: ifup eth0
+# Pi Zero W has no built-in eth0, so do not start it automatically.
+iface eth0 inet dhcp
 
-   auto wlan0
-   iface wlan0 inet dhcp
-       pre-up ip link set wlan0 up
-       pre-up sleep 2
-       pre-up wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf
-       post-down killall wpa_supplicant
+auto wlan0
+iface wlan0 inet dhcp
+    pre-up ip link set wlan0 up
+    pre-up sleep 2
+    pre-up wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf
+    post-down killall wpa_supplicant

@@ -1,13 +1,13 @@
 #!/bin/sh
-# S45ntpdate: 인터넷 시간 동기화 스크립트
-
+# Compatibility placeholder: time synchronization is handled by Buildroot's
+# /etc/init.d/S49ntp. Keep this file to replace old copies in incremental builds.
+# Never wait for network access or start a second ntpd here.
 case "$1" in
-  start)
-    echo -n "Syncing system clock with NTP server: "
-    # ://google.com 서버로부터 시간을 수신하여 시스템 시각 강제 설정 (-q)
-    ntpd -q -n -p ://google.com
-    echo "OK"
-    ;;
+    start|stop|restart|reload)
+        exit 0
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|reload}" >&2
+        exit 1
+        ;;
 esac
-exit 0
-
