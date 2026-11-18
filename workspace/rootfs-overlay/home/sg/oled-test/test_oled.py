@@ -1,4 +1,7 @@
 import datetime
+import fcntl
+import socket
+import struct
 import time
 from smbus import SMBus
 import adafruit_ssd1306
@@ -48,13 +51,43 @@ class I2C_Device:
         pass
 
 
+
+def get_ipv4_address():
+    """인터넷 접속 없이 로컬 인터페이스의 IPv4를 조회합니다."""
+    try:
+        interfaces = [name for _, name in socket.if_nameindex()]
+    except OSError:
+        return "No network"
+
+    # Wi-Fi를 우선하고, 유선 및 나머지 인터페이스를 확인합니다.
+    ordered = [name for name in ("wlan0", "eth0") if name in interfaces]
+    ordered.extend(name for name in interfaces if name not in ordered and name != "lo")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            for name in ordered:
+                try:
+                    request = struct.pack("256s", name.encode("utf-8")[:15])
+                    result = fcntl.ioctl(sock.fileno(), 0x8915, request)  # SIOCGIFADDR
+                    address = socket.inet_ntoa(result[20:24])
+                    if address != "0.0.0.0" and not address.startswith("127."):
+                        return address
+                except OSError:
+                    continue
+    except OSError:
+        pass
+    return "No network"
+
+
 i2c = I2C_Device(bus_num=1, addr=0x3c)
 display = adafruit_ssd1306.SSD1306_I2C(128, 64, i2c)
 
 # 텍스트 출력을 위한 기본 폰트 로드
 font = ImageFont.load_default()
 
-print("OLED 실시간 시계 시작... (종료하려면 Ctrl+C)")
+print("OLED 실시간 시계 및 IP 표시 시작... (종료하려면 Ctrl+C)")
+
+ip_address = "No network"
+next_ip_check = 0.0
 
 try:
     while True:
@@ -64,7 +97,12 @@ try:
 
         # 2. 상단 타이틀 텍스트 그리기
         draw.text((0, 0), "Hello Buildroot!", font=font, fill=255)
-        draw.text((0, 15), "System Clock", font=font, fill=255)
+        # DHCP 변경과 연결 해제를 반영하되 매 프레임 조회하지 않습니다.
+        monotonic_now = time.monotonic()
+        if monotonic_now >= next_ip_check:
+            ip_address = get_ipv4_address()
+            next_ip_check = monotonic_now + 5.0
+        draw.text((0, 15), f"IP: {ip_address}", font=font, fill=255)
 
         # 3. 하단에 시간을 감싸줄 사각형 테두리 그리기
         # (좌상단 X:0, Y:35) 부터 (우하단 X:127, Y:63) 까지
