@@ -60,8 +60,14 @@ fi
 
 # Install the project boot-image hook for existing configurations too.
 # Only change the hook list; preserve all user-selected packages and toolchain.
-hook="../../board/pizero/post-image.sh"
-if ! grep -q 'board/pizero/post-image.sh' "$config_path"; then
+hook="../board/pizero/post-image.sh"
+# Both /project/workspace and /workspace expose this path beside buildroot.
+[ -x "$br/$hook" ] || {
+    echo "Missing project post-image hook: $br/$hook" >&2
+    exit 1
+}
+hook_setting="$(sed -n 's/^BR2_ROOTFS_POST_IMAGE_SCRIPT=//p' "$config_path")"
+if [[ "$hook_setting" != *"$hook"* || "$hook_setting" == *"../../board/pizero/post-image.sh"* ]]; then
     cp -p "$config_path" "$config_path.before-i2c-hook"
     tmp_config="$(mktemp "$config_path.XXXXXX")"
     awk -v hook="$hook" '
@@ -69,7 +75,14 @@ if ! grep -q 'board/pizero/post-image.sh' "$config_path"; then
         /^BR2_ROOTFS_POST_IMAGE_SCRIPT=/ {
             value=substr($0, length("BR2_ROOTFS_POST_IMAGE_SCRIPT=")+1)
             if (substr(value,1,1)==quote) value=substr(value,2,length(value)-2)
-            print "BR2_ROOTFS_POST_IMAGE_SCRIPT=" quote hook " " value quote
+            count=split(value, scripts, /[[:space:]]+/)
+            value=hook
+            for (i=1; i<=count; i++) {
+                if (scripts[i] != "" && scripts[i] != hook &&
+                    scripts[i] != "../../board/pizero/post-image.sh")
+                    value=value " " scripts[i]
+            }
+            print "BR2_ROOTFS_POST_IMAGE_SCRIPT=" quote value quote
             found=1
             next
         }

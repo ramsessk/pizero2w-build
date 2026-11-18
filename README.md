@@ -360,7 +360,7 @@ chmod 600 /etc/dropbear/dropbear_rsa_host_key
 
 부트 파티션을 읽기·쓰기로 마운트하며 일반 사용자에게도 쓰기 권한을 줍니다. 필요에 따라 권한을 제한하십시오.
 
-오버레이의 `boot/firmware/config.txt`에는 `dtparam=i2c_arm=on`이 있지만, 부트 파티션을 이 경로에 마운트하면 루트 파일시스템의 해당 파일은 가려집니다. **오버레이에 파일이 있다는 사실만으로 실제 FAT 부트 파티션에 I2C 설정이 반영되지는 않습니다.** 프로젝트의 `board/pizero/post-image.sh`가 표준 Raspberry Pi post-image 스크립트보다 먼저 실행되어 `images/rpi-firmware/config.txt` 끝의 `[all]` 구역에 `dtparam=i2c_arm=on`을 추가합니다. 그 후 genimage가 FAT 부트 이미지와 sdcard.img를 생성하므로 증분 빌드에도 반영됩니다.
+오버레이의 `boot/firmware/config.txt`에는 `dtparam=i2c_arm=on`이 있지만, 부트 파티션을 이 경로에 마운트하면 루트 파일시스템의 해당 파일은 가려집니다. **오버레이에 파일이 있다는 사실만으로 실제 FAT 부트 파티션에 I2C 설정이 반영되지는 않습니다.** 프로젝트의 `workspace/board/pizero/post-image.sh`가 표준 Raspberry Pi post-image 스크립트보다 먼저 실행되어 `images/rpi-firmware/config.txt` 끝의 `[all]` 구역에 `dtparam=i2c_arm=on`을 추가합니다. 그 후 genimage가 FAT 부트 이미지와 sdcard.img를 생성하므로 증분 빌드에도 반영됩니다.
 
 `etc/modules`에는 i2c-bcm2835와 i2c-dev가 지정되어 있고, `S30wifi_load`가 이를 로드합니다. mdev 규칙과 시작 스크립트는 I2C 장치에 0666 권한을 부여합니다. 이는 모든 사용자에게 장치 접근을 허용하는 현재 개발용 구성입니다.
 
@@ -748,3 +748,8 @@ make
 통합 전 문서는 [README 원본](docs/backup/README.md)과 [README2 원본](docs/backup/README2.md)에 내용 변경 없이 보관했습니다. 현재 사용 절차는 이 README를 기준으로 합니다.
 
 실제 이미지 다운로드와 테스트는 프로젝트 개발자가 Pi Zero W에서 수행했습니다. 이 README는 해당 개발 이력과 저장된 설정·스크립트를 기준으로 정리했으며, 문서 편집 과정에서 별도의 이미지 빌드 및 보드 부팅 재검증은 수행하지 않았습니다.
+
+
+### post-image 훅 경로 오류 복구
+
+기존 `../../board/pizero/post-image.sh`는 이중 마운트의 `/home/builduser/workspace/buildroot`에서 잘못된 위치를 참조했습니다. 훅을 `workspace/board/pizero/post-image.sh`로 옮겨 Buildroot에서 `../board/pizero/post-image.sh`로 실행합니다. `build.sh build`는 기존 .config의 이전 경로도 교정합니다. 호스트에서 git pull 후 컨테이너에서 build.sh build를 다시 실행하십시오. clean은 필요 없습니다. post-image 오류로 make가 실패했다면 rootfs.ext4가 생성되어도 sdcard.img는 이전 파일일 수 있으므로, 전체 빌드가 성공한 후 새 sdcard.img를 기록해야 합니다.
